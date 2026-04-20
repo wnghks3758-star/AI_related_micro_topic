@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from collections import Counter
+import os
+import glob
 
 # ---------------------------------------------------------
 # 1. 페이지 기본 설정 및 상태 초기화
@@ -21,20 +23,61 @@ def set_search_keyword(keyword):
     st.session_state.search_query = keyword
 
 # ---------------------------------------------------------
-# 2. 데이터 업로드 및 로드 
+# 2. 데이터 자동 로드 및 기간 선택 (GitHub 배포 환경 대응)
 # ---------------------------------------------------------
-uploaded_file = st.file_uploader("📂 분석할 Parquet 결과 파일을 업로드해 주세요", type=['parquet'])
+
+# 💡 Parquet 파일들이 저장된 폴더 경로 (GitHub 구조에 맞게 수정 가능)
+DATA_DIR = "data/result"
 
 @st.cache_data
-def load_uploaded_data(file_buffer):
-    return pd.read_parquet(file_buffer)
+def get_available_periods(data_dir):
+    """지정된 폴더에서 Parquet 파일 목록을 읽어와 (보여줄 기간 이름 : 실제 파일 경로) 딕셔너리를 만듭니다."""
+    file_map = {}
+    
+    # 폴더가 존재하는지 확인
+    if not os.path.exists(data_dir):
+        return file_map
+        
+    # 폴더 안의 파일들을 하나씩 확인
+    for file_name in os.listdir(data_dir):
+        if file_name.startswith("Micro_Topics_") and file_name.endswith(".parquet"):
+            # 파일명에서 날짜 부분만 추출 (예: Micro_Topics_2026-03-30_to_2026-04-12.parquet)
+            date_str = file_name.replace("Micro_Topics_", "").replace(".parquet", "")
+            
+            try:
+                # "2026-03-30_to_2026-04-12" -> "2026-03-30", "2026-04-12" 분리
+                start_date, end_date = date_str.split("_to_")
+                label = f"{start_date} ~ {end_date}"
+                
+                # 파일 경로 저장
+                file_map[label] = os.path.join(data_dir, file_name)
+            except ValueError:
+                # 파일 이름 규칙이 맞지 않는 경우 무시
+                pass
+                
+    # 최신 날짜가 위로 오도록 정렬하여 반환
+    return dict(sorted(file_map.items(), reverse=True))
 
-if uploaded_file is None:
-    st.info("⬆️ 상단에 Parquet 파일을 업로드하시면 대시보드가 활성화됩니다.")
+# 폴더 읽기 실행
+file_map = get_available_periods(DATA_DIR)
+
+# 파일이 하나도 없는 경우 처리
+if not file_map:
+    st.error(f"'{DATA_DIR}' 폴더에서 분석 가능한 Parquet 파일을 찾을 수 없습니다. GitHub 저장소 경로를 확인해 주세요.")
     st.stop()
 
+# 사이드바에 기간 선택 드롭다운 생성
+selected_period = st.sidebar.selectbox("📅 분석할 기간을 선택하세요", list(file_map.keys()))
+
+@st.cache_data
+def load_data(file_path):
+    return pd.read_parquet(file_path)
+
+# 선택된 기간의 파일 로드
 try:
-    df = load_uploaded_data(uploaded_file)
+    df = load_data(file_map[selected_period])
+    # 성공 메시지는 3초 후 사라지도록 처리하면 화면이 더 깔끔합니다.
+    st.success(f"'{selected_period}' 기간의 데이터가 로드되었습니다!", icon="✅")
 except Exception as e:
     st.error(f"파일을 읽는 중 에러가 발생했습니다: {e}")
     st.stop()
