@@ -170,7 +170,8 @@ st.write("")
 # 6. 최종 결과 렌더링
 # ---------------------------------------------------------
 for index, row in filtered_df.iterrows():
-    expander_title = f"📌 {row['제목']} (키워드: {row['키워드']})"
+    # 💡 [수정] 맨 앞에 대괄호로 [카테고리]를 추가했습니다.
+    expander_title = f"[{row['카테고리']}] 📌 {row['제목']} (키워드: {row['키워드']})"
     
     with st.expander(expander_title):
         st.markdown("#### 📝 핵심 인사이트 요약")
