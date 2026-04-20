@@ -27,7 +27,7 @@ def set_search_keyword(keyword):
 # ---------------------------------------------------------
 
 # 💡 Parquet 파일들이 저장된 폴더 경로 (GitHub 구조에 맞게 수정 가능)
-DATA_DIR = "data/result"
+DATA_DIR = "data"
 
 @st.cache_data
 def get_available_periods(data_dir):
