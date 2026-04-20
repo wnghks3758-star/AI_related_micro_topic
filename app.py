@@ -36,25 +36,41 @@ except Exception as e:
     st.stop()
 
 # ---------------------------------------------------------
-# 3. 카테고리 필터링 (사용자 인터페이스)
+# 3. 사이드바 필터링 및 검색 (사용자 인터페이스)
 # ---------------------------------------------------------
-# '카테고리' 열에서 중복을 제거하고 리스트 생성
-category_list = sorted(df['카테고리'].dropna().unique().tolist())
+st.sidebar.header("🔍 필터 및 검색")
 
-# Selectbox를 통해 사용자 입력 받기 ('전체보기' 옵션 추가)
-selected_category = st.selectbox(
-    "📂 분석할 카테고리를 선택하세요", 
+# 1. 카테고리 선택
+category_list = sorted(df['카테고리'].dropna().unique().tolist())
+selected_category = st.sidebar.selectbox(
+    "📂 카테고리 선택", 
     ["전체보기"] + category_list
 )
 
-# 조건에 맞춰 데이터프레임 필터링
+# 2. 키워드 검색어 입력
+search_query = st.sidebar.text_input("🔎 검색어 입력 (제목, 요약, 키워드 포함)", "").strip()
+
+# [필터링 로직 시작]
+# 카테고리 필터링 적용
 if selected_category == "전체보기":
     filtered_df = df
 else:
     filtered_df = df[df['카테고리'] == selected_category]
 
+# 검색어 필터링 적용 (제목, summary, 키워드 중 하나라도 포함되면 노출)
+if search_query:
+    # 대소문자 구분 없이(case=False) 검색하며, NaN 값은 무시(na=False)하도록 설정
+    filtered_df = filtered_df[
+        filtered_df['제목'].str.contains(search_query, case=False, na=False) |
+        filtered_df['summary'].str.contains(search_query, case=False, na=False) |
+        filtered_df['키워드'].str.contains(search_query, case=False, na=False)
+    ]
+
+# 검색 결과 안내
 st.caption(f"검색 결과: 총 **{len(filtered_df)}**개의 토픽이 발견되었습니다.")
-st.write("") # 약간의 여백 추가
+if search_query:
+    st.write(f"💡 '**{search_query}**'에 대한 검색 결과입니다.")
+st.write("")
 
 # ---------------------------------------------------------
 # 4. 토픽 출력 및 하이퍼링크 처리
