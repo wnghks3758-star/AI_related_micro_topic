@@ -8,24 +8,24 @@ import pickle
 # ---------------------------------------------------------
 # UI 스타일 강제 수정 (Multiselect 글자 잘림 방지)
 # ---------------------------------------------------------
-st.markdown(
-    """
-    <style>
-    /* multiselect 안의 태그(박스) 최대 너비를 100%로 늘림 */
-    .stMultiSelect div[data-baseweb="select"] span[data-baseweb="tag"] {
-        max-width: 150% !important;
-    }
+# st.markdown(
+#     """
+#     <style>
+#     /* multiselect 안의 태그(박스) 최대 너비를 100%로 늘림 */
+#     .stMultiSelect div[data-baseweb="select"] span[data-baseweb="tag"] {
+#         max-width: 150% !important;
+#     }
     
-    /* 태그 안의 텍스트가 줄바꿈되거나 다 보이도록 말줄임표(ellipsis) 제거 */
-    .stMultiSelect div[data-baseweb="select"] span[data-baseweb="tag"] span {
-        white-space: normal !important;
-        overflow: visible !important;
-        text-overflow: unset !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+#     /* 태그 안의 텍스트가 줄바꿈되거나 다 보이도록 말줄임표(ellipsis) 제거 */
+#     .stMultiSelect div[data-baseweb="select"] span[data-baseweb="tag"] span {
+#         white-space: normal !important;
+#         overflow: visible !important;
+#         text-overflow: unset !important;
+#     }
+#     </style>
+#     """,
+#     unsafe_allow_html=True
+# )
 
 # ---------------------------------------------------------
 # 1. 페이지 기본 설정 및 상태 초기화
@@ -108,7 +108,8 @@ selected_periods = st.sidebar.multiselect(
     "조회할 기간 선택",
     options=periods,
     default=[latest_period], 
-    placeholder="기간을 선택해주세요"
+    placeholder="기간을 선택해주세요",
+    format_func=lambda x: f"{x.split(' ~ ')[0][2:]}~{x.split(' ~ ')[1][2:]}" # 2026-03-30 ~ 2026-04-12 -> 26-03-30~26-04-12
 )
 
 # 4) 예외 처리: 사용자가 'X'를 눌러서 모든 기간을 지워버렸을 때
