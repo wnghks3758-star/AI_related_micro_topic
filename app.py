@@ -13,7 +13,7 @@ st.markdown(
     <style>
     /* multiselect 안의 태그(박스) 최대 너비를 100%로 늘림 */
     .stMultiSelect div[data-baseweb="select"] span[data-baseweb="tag"] {
-        max-width: 100% !important;
+        max-width: 150% !important;
     }
     
     /* 태그 안의 텍스트가 줄바꿈되거나 다 보이도록 말줄임표(ellipsis) 제거 */
