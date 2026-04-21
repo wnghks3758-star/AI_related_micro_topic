@@ -68,17 +68,29 @@ emb_dict = load_embedding_dict(DATA_DIR)
 # ---------------------------------------------------------
 st.sidebar.header("🔍 필터 및 고급 검색")
 
+# 카테고리 리스트 추출
 category_list = sorted(df['카테고리'].dropna().unique().tolist())
-selected_category = st.sidebar.selectbox("📂 카테고리 선택", ["전체보기"] + category_list)
+
+# 💡 [수정] selectbox 대신 multiselect를 사용합니다.
+# default를 빈 리스트([])로 두고, 비어있을 때 '전체보기'로 작동하도록 로직을 짭니다.
+selected_categories = st.sidebar.multiselect(
+    "📂 카테고리 선택", 
+    options=category_list,
+    default=[], 
+    placeholder="전체보기 (클릭하여 카테고리 추가)"
+)
 
 # 고급 검색 안내 문구 추가
 st.sidebar.caption("💡 **검색 팁:** 여러 단어를 검색할 때는 대문자로 `AND` 또는 `OR`을 사용해 보세요. (예: `APPLE AND AI`, `규제 OR 법안`)")
 search_input = st.sidebar.text_input("🔎 검색어 입력", key="search_query").strip()
 
-if selected_category == "전체보기":
+# 💡 [수정] 1차 필터링 (카테고리 다중 선택 로직)
+# 아무것도 선택하지 않았을 때(리스트가 비어있을 때)는 전체 데이터를 보여주고,
+# 하나라도 선택했다면 해당 카테고리들에 포함된(.isin) 데이터만 보여줍니다.
+if not selected_categories:
     cat_df = df
 else:
-    cat_df = df[df['카테고리'] == selected_category]
+    cat_df = df[df['카테고리'].isin(selected_categories)]
 
 # ---------------------------------------------------------
 # 4. 메인 화면 1: 기본 토픽 키워드 Top 10 추출
