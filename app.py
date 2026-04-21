@@ -42,8 +42,19 @@ def get_available_periods(data_dir):
     return dict(sorted(file_map.items(), reverse=True))
 
 @st.cache_data
-def load_data(file_path):
-    return pd.read_parquet(file_path)
+def load_data(file_path, period_label):
+    # Parquet 파일 로드
+    df = pd.read_parquet(file_path)
+    
+    # 💡 [추가] period_label (예: "2026-03-30 ~ 2026-04-12")을 가공하여 컬럼으로 추가
+    start_date, end_date = period_label.split(" ~ ")
+    # 앞의 '20' 연도를 떼어내고 (인덱스 2부터 슬라이싱), 물결(~)로 연결
+    short_date_format = f"{start_date[2:]}~{end_date[2:]}"
+    
+    # 데이터프레임에 '도출_기간' 컬럼 추가
+    df['도출_기간'] = short_date_format
+    
+    return df
 
 @st.cache_data
 def load_embedding_dict(data_dir):
@@ -60,7 +71,9 @@ if not file_map:
     st.stop()
 
 selected_period = st.sidebar.selectbox("📅 분석할 기간을 선택하세요", list(file_map.keys()))
-df = load_data(file_map[selected_period])
+
+# 💡 [수정] load_data 호출 시 selected_period도 함께 넘겨줍니다.
+df = load_data(file_map[selected_period], selected_period)
 emb_dict = load_embedding_dict(DATA_DIR)
 
 # ---------------------------------------------------------
@@ -69,7 +82,7 @@ emb_dict = load_embedding_dict(DATA_DIR)
 st.sidebar.header("🔍 필터 및 고급 검색")
 
 # 카테고리 리스트 추출
-category_list = sorted(df['카테고리'].dropna().unique().tolist())
+category_list = ['기업 및 시장 동향', '기술 동향', '정책 및 규제 동향', '사회적 파급 효과', '기타']
 
 # 💡 [수정] selectbox 대신 multiselect를 사용합니다.
 # default를 빈 리스트([])로 두고, 비어있을 때 '전체보기'로 작동하도록 로직을 짭니다.
@@ -179,15 +192,46 @@ st.caption(f"검색 결과: 총 **{len(filtered_df)}**개의 토픽이 발견되
 st.write("")
 
 # ---------------------------------------------------------
-# 6. 최종 결과 렌더링
+# 6. 다중 정렬 및 최종 결과 렌더링
 # ---------------------------------------------------------
-for index, row in filtered_df.iterrows():
-    # 💡 [수정] 맨 앞에 대괄호로 [카테고리]를 추가했습니다.
-    expander_title = f"[{row['카테고리']}] 📌 {row['제목']} (키워드: {row['키워드']})"
+# 필터링된 데이터프레임의 복사본을 만들어 정렬 작업 수행 (경고 메시지 방지)
+sorted_df = filtered_df.copy()
+
+# 1) 카테고리 사용자 정의 정렬 순서 지정 (여기에 없는 카테고리는 자동으로 맨 뒤로 밀림)
+custom_order = ['기업 및 시장 동향', '기술 동향', '정책 및 규제 동향', '사회적 파급 효과', '기타']
+sorted_df['카테고리'] = pd.Categorical(sorted_df['카테고리'], categories=custom_order, ordered=True)
+
+# 2) 정렬 기준 및 방향(오름차순/내림차순) 세팅
+# 기본 정렬: 1순위 도출_기간(내림차순), 2순위 카테고리(오름차순: 지정해둔 custom_order 순서)
+sort_columns = ['도출_기간', '카테고리']
+sort_ascending = [False, True] 
+
+# 3) '기사_수' 컬럼 존재 여부에 따라 3순위 조건 동적 추가
+if '기사_수' in sorted_df.columns:
+    sort_columns.append('기사_수')
+    sort_ascending.append(False) # 많은 순(내림차순)
+
+# 4) 마지막 순위: 제목 가나다순 추가
+sort_columns.append('제목')
+sort_ascending.append(True)      # 가나다순(오름차순)
+
+# 5) 설정한 조건으로 최종 정렬 실행
+sorted_df = sorted_df.sort_values(by=sort_columns, ascending=sort_ascending)
+
+# 6) 화면 렌더링
+for index, row in sorted_df.iterrows():
+    # 제목 설정 (도출_기간 포함)
+    expander_title = f"[{row['도출_기간']}] 📌 {row['제목']} (키워드: {row['키워드']})"
+    
+    # 만약 기사 수 데이터가 있다면 제목에 배지처럼 표시 (선택 사항)
+    if '기사_수' in row and pd.notna(row['기사_수']):
+        expander_title += f" 🔥기사 {int(row['기사_수'])}건"
     
     with st.expander(expander_title):
         st.markdown("#### 📝 핵심 인사이트 요약")
         st.markdown(row['summary'])
+        
+        st.markdown(f"**📂 카테고리:** {row['카테고리']}")
         
         st.markdown("---")
         st.markdown("#### 📑 관련 기사 출처")
