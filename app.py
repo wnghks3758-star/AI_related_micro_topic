@@ -6,6 +6,28 @@ import os
 import pickle
 
 # ---------------------------------------------------------
+# UI 스타일 강제 수정 (Multiselect 글자 잘림 방지)
+# ---------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    /* multiselect 안의 태그(박스) 최대 너비를 100%로 늘림 */
+    .stMultiSelect div[data-baseweb="select"] span[data-baseweb="tag"] {
+        max-width: 100% !important;
+    }
+    
+    /* 태그 안의 텍스트가 줄바꿈되거나 다 보이도록 말줄임표(ellipsis) 제거 */
+    .stMultiSelect div[data-baseweb="select"] span[data-baseweb="tag"] span {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# ---------------------------------------------------------
 # 1. 페이지 기본 설정 및 상태 초기화
 # ---------------------------------------------------------
 st.set_page_config(page_title="AI 뉴스 인사이트 대시보드", page_icon="🌐", layout="wide")
