@@ -21,7 +21,7 @@ def set_search_keyword(keyword):
     st.session_state.search_query = keyword
 
 # ---------------------------------------------------------
-# 2. 데이터 및 임베딩 사전 로드
+# 2. 데이터 및 임베딩 사전 로드 (다중 기간 병합 기능 포함)
 # ---------------------------------------------------------
 DATA_DIR = "data"
 
@@ -39,22 +39,30 @@ def get_available_periods(data_dir):
                 file_map[label] = os.path.join(data_dir, file_name)
             except ValueError:
                 pass
-    return dict(sorted(file_map.items(), reverse=True))
+    
+    # 💡 [핵심] 범위를 잡기 위해 시간순(과거 -> 최신)으로 오름차순 정렬합니다.
+    return dict(sorted(file_map.items()))
 
 @st.cache_data
-def load_data(file_path, period_label):
-    # Parquet 파일 로드
-    df = pd.read_parquet(file_path)
+def load_and_concat_data(selected_files_dict):
+    """여러 기간의 Parquet 파일을 읽어와 하나로 합치는 함수"""
+    df_list = []
     
-    # 💡 [추가] period_label (예: "2026-03-30 ~ 2026-04-12")을 가공하여 컬럼으로 추가
-    start_date, end_date = period_label.split(" ~ ")
-    # 앞의 '20' 연도를 떼어내고 (인덱스 2부터 슬라이싱), 물결(~)로 연결
-    short_date_format = f"{start_date[2:]}~{end_date[2:]}"
-    
-    # 데이터프레임에 '도출_기간' 컬럼 추가
-    df['도출_기간'] = short_date_format
-    
-    return df
+    # 선택된 딕셔너리를 순회하며 파일 로드 및 기간 컬럼 추가
+    for period_label, file_path in selected_files_dict.items():
+        temp_df = pd.read_parquet(file_path)
+        
+        # 도출_기간 포맷팅 (예: 26-03-30~26-04-12)
+        start_date, end_date = period_label.split(" ~ ")
+        short_date_format = f"{start_date[2:]}~{end_date[2:]}"
+        temp_df['도출_기간'] = short_date_format
+        
+        df_list.append(temp_df)
+        
+    # 리스트에 모인 데이터프레임들을 위아래로 병합
+    if df_list:
+        return pd.concat(df_list, ignore_index=True)
+    return pd.DataFrame()
 
 @st.cache_data
 def load_embedding_dict(data_dir):
@@ -65,16 +73,45 @@ def load_embedding_dict(data_dir):
             return pickle.load(f)
     return {}
 
+# 1) 파일 목록 가져오기
 file_map = get_available_periods(DATA_DIR)
 if not file_map:
     st.error(f"'{DATA_DIR}' 폴더에서 분석 가능한 Parquet 파일을 찾을 수 없습니다.")
     st.stop()
 
-selected_period = st.sidebar.selectbox("📅 분석할 기간을 선택하세요", list(file_map.keys()))
+# 2) 기간 리스트 추출 (과거 -> 최신 순 정렬됨)
+periods = list(file_map.keys())
 
-# 💡 [수정] load_data 호출 시 selected_period도 함께 넘겨줍니다.
-df = load_data(file_map[selected_period], selected_period)
+# 3) 사이드바: 시작~종료 기간을 선택하는 슬라이더 UI
+st.sidebar.markdown("### 📅 분석 기간 설정")
+
+if len(periods) == 1:
+    # 파일이 1개뿐일 때는 범위 선택이 불가능하므로 예외 처리
+    start_period, end_period = periods[0], periods[0]
+    st.sidebar.info(f"선택 가능한 기간: {periods[0]}")
+else:
+    # 💡 [핵심 UI] 양방향 슬라이더 생성
+    start_period, end_period = st.sidebar.select_slider(
+        "시작 및 종료 기간의 범위를 드래그하세요",
+        options=periods,
+        # 기본값: 앱을 켰을 때 가장 최신 주차 1개만 선택되도록 설정 (메모리 로딩 방지)
+        # 만약 기본으로 전체를 다 불러오고 싶다면 value=(periods[0], periods[-1]) 로 수정하세요.
+        value=(periods[-1], periods[-1]) 
+    )
+
+# 4) 선택된 범위에 해당하는 기간들만 추출
+start_idx = periods.index(start_period)
+end_idx = periods.index(end_period)
+
+# 인덱스 슬라이싱으로 선택된 기간과 파일 경로만 담긴 새 딕셔너리 생성
+selected_files = {p: file_map[p] for p in periods[start_idx:end_idx+1]}
+
+# 5) 필터링된 파일들을 병합하여 하나의 DataFrame으로 로드
+df = load_and_concat_data(selected_files)
 emb_dict = load_embedding_dict(DATA_DIR)
+
+# (선택 사항) 메인 화면 상단에 현재 몇 개의 주차가 병합되었는지 표시
+st.caption(f"🕒 현재 조회 중인 기간: **{start_period}** 부터 **{end_period}** 까지 (총 **{len(selected_files)}**개 주차 데이터 병합됨)")
 
 # ---------------------------------------------------------
 # 3. 사이드바: 필터 및 고급 검색창
