@@ -291,11 +291,7 @@ sorted_df = sorted_df.sort_values(by=sort_columns, ascending=sort_ascending)
 # 6) 화면 렌더링
 for index, row in sorted_df.iterrows():
     # 제목 설정 (도출_기간 포함)
-    expander_title = f"[{row['도출_기간']}] 📌 {row['제목']} (키워드: {row['키워드']}) 기사수:{row['기사_수']}"
-    
-    # 💡 [수정] 기사 수를 int로 깔끔하게 렌더링 (fillna(0) 처리를 했으므로 안전함)
-    if '기사_수' in row and pd.notna(row['기사_수']) and row['기사_수'] > 0:
-        expander_title += f" 🔥기사 {int(row['기사_수'])}건"
+    expander_title = f"[{row['도출_기간']}] 📌 {row['제목']} (키워드: {row['키워드']})"
         
     with st.expander(expander_title):
         st.markdown("#### 📝 핵심 인사이트 요약")
