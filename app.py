@@ -40,33 +40,27 @@ def get_available_periods(data_dir):
             except ValueError:
                 pass
     
-    # 💡 [핵심] 범위를 잡기 위해 시간순(과거 -> 최신)으로 오름차순 정렬합니다.
-    return dict(sorted(file_map.items()))
+    # 💡 [핵심] 최신 파일이 위로 올라오도록 내림차순 정렬 (reverse=True)
+    return dict(sorted(file_map.items(), reverse=True))
 
 @st.cache_data
 def load_and_concat_data(selected_files_dict):
     """여러 기간의 Parquet 파일을 읽어와 하나로 합치는 함수"""
     df_list = []
     
-    # 선택된 딕셔너리를 순회하며 파일 로드 및 기간 컬럼 추가
     for period_label, file_path in selected_files_dict.items():
         temp_df = pd.read_parquet(file_path)
-        
-        # 도출_기간 포맷팅 (예: 26-03-30~26-04-12)
         start_date, end_date = period_label.split(" ~ ")
         short_date_format = f"{start_date[2:]}~{end_date[2:]}"
         temp_df['도출_기간'] = short_date_format
-        
         df_list.append(temp_df)
         
-    # 리스트에 모인 데이터프레임들을 위아래로 병합
     if df_list:
         return pd.concat(df_list, ignore_index=True)
     return pd.DataFrame()
 
 @st.cache_data
 def load_embedding_dict(data_dir):
-    """미리 만들어둔 키워드 임베딩 사전을 불러옵니다."""
     dict_path = os.path.join(data_dir, 'keyword_embeddings_dict.pkl')
     if os.path.exists(dict_path):
         with open(dict_path, 'rb') as f:
@@ -79,39 +73,38 @@ if not file_map:
     st.error(f"'{DATA_DIR}' 폴더에서 분석 가능한 Parquet 파일을 찾을 수 없습니다.")
     st.stop()
 
-# 2) 기간 리스트 추출 (과거 -> 최신 순 정렬됨)
+# 2) 기간 리스트 추출 (최신순)
 periods = list(file_map.keys())
+latest_period = periods[0] # 가장 첫 번째 요소 = 가장 최신 파일
 
-# 3) 사이드바: 시작~종료 기간을 선택하는 슬라이더 UI
+# 3) 사이드바: 카테고리처럼 다중 선택하는 기간 UI
 st.sidebar.markdown("### 📅 분석 기간 설정")
+st.sidebar.caption("보고 싶은 주차를 추가로 선택하여 병합할 수 있습니다.")
 
-if len(periods) == 1:
-    # 파일이 1개뿐일 때는 범위 선택이 불가능하므로 예외 처리
-    start_period, end_period = periods[0], periods[0]
-    st.sidebar.info(f"선택 가능한 기간: {periods[0]}")
-else:
-    # 💡 [핵심 UI] 양방향 슬라이더 생성
-    start_period, end_period = st.sidebar.select_slider(
-        "시작 및 종료 기간의 범위를 드래그하세요",
-        options=periods,
-        # 기본값: 앱을 켰을 때 가장 최신 주차 1개만 선택되도록 설정 (메모리 로딩 방지)
-        # 만약 기본으로 전체를 다 불러오고 싶다면 value=(periods[0], periods[-1]) 로 수정하세요.
-        value=(periods[-1], periods[-1]) 
-    )
+# 💡 [핵심 UI] default 값으로 가장 최신 주차를 넣어줍니다.
+selected_periods = st.sidebar.multiselect(
+    "조회할 기간 선택",
+    options=periods,
+    default=[latest_period], 
+    placeholder="기간을 선택해주세요"
+)
 
-# 4) 선택된 범위에 해당하는 기간들만 추출
-start_idx = periods.index(start_period)
-end_idx = periods.index(end_period)
+# 4) 예외 처리: 사용자가 'X'를 눌러서 모든 기간을 지워버렸을 때
+if not selected_periods:
+    st.warning("⚠️ 최소 1개 이상의 기간을 선택해야 데이터를 볼 수 있습니다.")
+    st.stop()
 
-# 인덱스 슬라이싱으로 선택된 기간과 파일 경로만 담긴 새 딕셔너리 생성
-selected_files = {p: file_map[p] for p in periods[start_idx:end_idx+1]}
+# 5) 선택된 기간에 해당하는 파일 경로만 딕셔너리로 추출
+selected_files = {p: file_map[p] for p in selected_periods}
 
-# 5) 필터링된 파일들을 병합하여 하나의 DataFrame으로 로드
+# 6) 필터링된 파일들을 병합하여 로드
 df = load_and_concat_data(selected_files)
 emb_dict = load_embedding_dict(DATA_DIR)
 
-# (선택 사항) 메인 화면 상단에 현재 몇 개의 주차가 병합되었는지 표시
-st.caption(f"🕒 현재 조회 중인 기간: **{start_period}** 부터 **{end_period}** 까지 (총 **{len(selected_files)}**개 주차 데이터 병합됨)")
+# 7) 메인 화면 상단 안내 문구
+# 선택한 주차들을 화면에 텍스트로 가볍게 뿌려줍니다.
+selected_periods_str = ", ".join([p.split(" ~ ")[0][2:] + "~" + p.split(" ~ ")[1][2:] for p in selected_periods])
+st.caption(f"🕒 현재 조회 중인 기간: **{selected_periods_str}** (총 **{len(selected_files)}**개 주차 병합됨)")
 
 # ---------------------------------------------------------
 # 3. 사이드바: 필터 및 고급 검색창
@@ -121,8 +114,6 @@ st.sidebar.header("🔍 필터 및 고급 검색")
 # 카테고리 리스트 추출
 category_list = ['기업 및 시장 동향', '기술 동향', '정책 및 규제 동향', '사회적 파급 효과', '기타']
 
-# 💡 [수정] selectbox 대신 multiselect를 사용합니다.
-# default를 빈 리스트([])로 두고, 비어있을 때 '전체보기'로 작동하도록 로직을 짭니다.
 selected_categories = st.sidebar.multiselect(
     "📂 카테고리 선택", 
     options=category_list,
@@ -134,9 +125,15 @@ selected_categories = st.sidebar.multiselect(
 st.sidebar.caption("💡 **검색 팁:** 여러 단어를 검색할 때는 대문자로 `AND` 또는 `OR`을 사용해 보세요. (예: `APPLE AND AI`, `규제 OR 법안`)")
 search_input = st.sidebar.text_input("🔎 검색어 입력", key="search_query").strip()
 
-# 💡 [수정] 1차 필터링 (카테고리 다중 선택 로직)
-# 아무것도 선택하지 않았을 때(리스트가 비어있을 때)는 전체 데이터를 보여주고,
-# 하나라도 선택했다면 해당 카테고리들에 포함된(.isin) 데이터만 보여줍니다.
+# 💡 [추가] 기사 수 정렬 라디오 버튼 추가
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📊 정렬 옵션")
+sort_article_option = st.sidebar.radio(
+    "🔥 토픽 내 기사 수 정렬",
+    options=["기사 많은 순 (내림차순)", "기사 적은 순 (오름차순)"],
+    index=0 # 기본값을 '기사 많은 순'으로 설정
+)
+
 if not selected_categories:
     cat_df = df
 else:
@@ -246,7 +243,12 @@ sort_ascending = [False, True]
 # 3) '기사_수' 컬럼 존재 여부에 따라 3순위 조건 동적 추가
 if '기사_수' in sorted_df.columns:
     sort_columns.append('기사_수')
-    sort_ascending.append(False) # 많은 순(내림차순)
+    
+    # 💡 [수정] 사이드바에서 선택한 라디오 버튼 값에 따라 True/False 동적 할당
+    if sort_article_option == "기사 많은 순 (내림차순)":
+        sort_ascending.append(False)
+    else:
+        sort_ascending.append(True)
 
 # 4) 마지막 순위: 제목 가나다순 추가
 sort_columns.append('제목')
@@ -269,7 +271,7 @@ for index, row in sorted_df.iterrows():
         st.markdown(row['summary'])
         
         st.markdown(f"**📂 카테고리:** {row['카테고리']}")
-        
+
         st.markdown("---")
         st.markdown("#### 📑 관련 기사 출처")
         
