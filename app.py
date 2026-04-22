@@ -285,10 +285,6 @@ for index, row in sorted_df.iterrows():
     # 제목 설정 (도출_기간 포함)
     expander_title = f"[{row['도출_기간']}] 📌 {row['제목']} (키워드: {row['키워드']})"
     
-    # 만약 기사 수 데이터가 있다면 제목에 배지처럼 표시 (선택 사항)
-    if '기사_수' in row and pd.notna(row['기사_수']):
-        expander_title += f" 🔥기사 {int(row['기사_수'])}건"
-    
     with st.expander(expander_title):
         st.markdown("#### 📝 핵심 인사이트 요약")
         st.markdown(row['summary'])
