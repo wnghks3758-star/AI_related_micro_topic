@@ -152,8 +152,8 @@ search_input = st.sidebar.text_input("🔎 검색어 입력", key="search_query"
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📊 정렬 옵션")
 sort_article_option = st.sidebar.radio(
-    "🔥 토픽 내 기사 수 정렬",
-    options=["기사 많은 순 (내림차순)", "기사 적은 순 (오름차순)"],
+    "🔥 정렬 방식",
+    options=["관련도 순", "중요도 순"],
     index=0 # 기본값을 '기사 많은 순'으로 설정
 )
 
@@ -251,53 +251,50 @@ st.write("")
 # ---------------------------------------------------------
 # 6. 다중 정렬 및 최종 결과 렌더링
 # ---------------------------------------------------------
+# 필터링된 데이터프레임의 복사본을 만들어 정렬 작업 수행 (경고 메시지 방지)
 sorted_df = filtered_df.copy()
 
-# 1) 카테고리 사용자 정의 정렬 순서 지정
+# 1) 카테고리 사용자 정의 정렬 순서 지정 (여기에 없는 카테고리는 자동으로 맨 뒤로 밀림)
 custom_order = ['기업 및 시장 동향', '기술 동향', '정책 및 규제 동향', '사회적 파급 효과', '기타']
 sorted_df['카테고리'] = pd.Categorical(sorted_df['카테고리'], categories=custom_order, ordered=True)
 
-# 💡 [필수 조치] '기사_수'가 문자열일 경우를 대비해 확실하게 숫자로 변환 (결측치는 0으로 처리)
-if '기사_수' in sorted_df.columns:
-    sorted_df['기사_수'] = pd.to_numeric(sorted_df['기사_수'], errors='coerce').fillna(0)
+# 2) 정렬 기준 및 방향(오름차순/내림차순) 세팅
+# 기본 정렬: 1순위 도출_기간(내림차순), 2순위 카테고리(오름차순: 지정해둔 custom_order 순서)
+sort_columns = ['도출_기간', '카테고리']
+sort_ascending = [False, True] 
 
-# 2) 정렬 기준 및 방향 동적 세팅
-# 1순위는 무조건 최신 '도출_기간'
-sort_columns = ['도출_기간']
-sort_ascending = [False] 
+# 3) 💡 [수정] 사용자가 선택한 정렬 옵션에 따라 점수 칼럼 동적 추가
+if sort_article_option == "관련도 순":
+    if 'relevance_score' in sorted_df.columns:
+        sort_columns.append('relevance_score')
+        sort_ascending.append(False) # 높은 점수부터(내림차순)
+elif sort_article_option == "중요도 순":
+    if 'importance_score' in sorted_df.columns:
+        sort_columns.append('importance_score')
+        sort_ascending.append(False) # 높은 점수부터(내림차순)
 
-# 💡 [핵심 수정] 사용자가 '기사 많은 순'을 골랐다면, 기사 수를 2순위(카테고리보다 앞)로 올립니다.
-if '기사_수' in sorted_df.columns:
-    if sort_article_option == "기사 많은 순 (내림차순)":
-        sort_columns.extend(['기사_수', '카테고리']) # 기사_수가 앞
-        sort_ascending.extend([False, True])
-    else:
-        # "기사 적은 순"이거나 기본값일 때는, 카테고리별로 예쁘게 묶어보는 게 더 중요할 수 있습니다.
-        # 원하신다면 여기도 ['기사_수', '카테고리']로 바꾸셔도 됩니다.
-        sort_columns.extend(['기사_수', '카테고리']) 
-        sort_ascending.extend([True, True])
-else:
-    # 기사 수 데이터가 아예 없을 때의 기본 동작
-    sort_columns.append('카테고리')
-    sort_ascending.append(True)
-
-# 3) 마지막 순위: 제목 가나다순
+# 4) 마지막 순위: 제목 가나다순 추가
 sort_columns.append('제목')
-sort_ascending.append(True)
+sort_ascending.append(True)      # 가나다순(오름차순)
 
-# 4) 최종 정렬 실행
+# 5) 설정한 조건으로 최종 정렬 실행
 sorted_df = sorted_df.sort_values(by=sort_columns, ascending=sort_ascending)
 
 # 6) 화면 렌더링
 for index, row in sorted_df.iterrows():
     # 제목 설정 (도출_기간 포함)
     expander_title = f"[{row['도출_기간']}] 📌 {row['제목']} (키워드: {row['키워드']})"
-        
+    
+    # 만약 기사 수 데이터가 있다면 제목에 배지처럼 표시 (선택 사항)
+    if '기사_수' in row and pd.notna(row['기사_수']):
+        expander_title += f" 🔥기사 {int(row['기사_수'])}건"
+    
     with st.expander(expander_title):
         st.markdown("#### 📝 핵심 인사이트 요약")
         st.markdown(row['summary'])
         
         st.markdown(f"**📂 카테고리:** {row['카테고리']}")
+
         st.markdown("---")
         st.markdown("#### 📑 관련 기사 출처")
         
