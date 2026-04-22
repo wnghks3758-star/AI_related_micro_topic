@@ -283,7 +283,7 @@ sorted_df = sorted_df.sort_values(by=sort_columns, ascending=sort_ascending)
 # 6) 화면 렌더링
 for index, row in sorted_df.iterrows():
     # 제목 설정 (도출_기간 포함)
-    expander_title = f"[{row['도출_기간']}] 📌 {row['제목']} (키워드: {row['키워드']})"
+    expander_title = f"[{row['도출_기간'].replace('~','～')}] 📌 {row['제목']} (키워드: {row['키워드']})"
     
     with st.expander(expander_title):
         st.markdown("#### 📝 핵심 인사이트 요약")
