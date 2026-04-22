@@ -109,7 +109,7 @@ selected_periods = st.sidebar.multiselect(
     options=periods,
     default=[latest_period], 
     placeholder="기간을 선택해주세요",
-    format_func=lambda x: f"{x.split(' ~ ')[0][2:]}~{x.split(' ~ ')[1][2:]}" # 2026-03-30 ~ 2026-04-12 -> 26-03-30~26-04-12
+    format_func=lambda x: f"{x.split(' ~ ')[0][2:]}～{x.split(' ~ ')[1][2:]}" # 2026-03-30 ~ 2026-04-12 -> 26-03-30~26-04-12
 )
 
 # 4) 예외 처리: 사용자가 'X'를 눌러서 모든 기간을 지워버렸을 때
@@ -126,7 +126,7 @@ emb_dict = load_embedding_dict(DATA_DIR)
 
 # 7) 메인 화면 상단 안내 문구
 # 선택한 주차들을 화면에 텍스트로 가볍게 뿌려줍니다.
-selected_periods_str = ", ".join([p.split(" ~ ")[0][2:] + "~" + p.split(" ~ ")[1][2:] for p in selected_periods])
+selected_periods_str = ", ".join([p.split(" ~ ")[0][2:] + "～" + p.split(" ~ ")[1][2:] for p in selected_periods])
 st.caption(f"🕒 현재 조회 중인 기간: **{selected_periods_str}** (총 **{len(selected_files)}**개 주차 병합됨)")
 
 # ---------------------------------------------------------
