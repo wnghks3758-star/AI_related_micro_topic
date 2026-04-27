@@ -43,18 +43,35 @@ def set_search_keyword(keyword):
     st.session_state.search_query = keyword
 
 # ---------------------------------------------------------
-# 2. 데이터 및 임베딩 사전 로드 (다중 기간 병합 기능 포함)
+# 2. 데이터 및 임베딩 사전 로드 (다중 기간 및 소스 병합 기능 포함)
 # ---------------------------------------------------------
 DATA_DIR = "data"
 
+# 💡 [추가] 사이드바 최상단: 데이터 소스 선택 라디오 버튼
+st.sidebar.markdown("### 🗄️ 데이터 소스 설정")
+data_source = st.sidebar.radio(
+    "뉴스 수집 출처를 선택하세요",
+    options=["Google News", "News API"],
+    index=0
+)
+
+st.sidebar.markdown("---")
+
 @st.cache_data
-def get_available_periods(data_dir):
+def get_available_periods(data_dir, source):
     file_map = {}
     if not os.path.exists(data_dir): return file_map
         
+    # 💡 [추가] 소스에 따른 파일 접두사 설정
+    prefix = "Micro_Topics_NewsAPI_" if source == "News API" else "Micro_Topics_"
+
     for file_name in os.listdir(data_dir):
-        if file_name.startswith("Micro_Topics_") and file_name.endswith(".parquet"):
-            date_str = file_name.replace("Micro_Topics_", "").replace(".parquet", "")
+        # 🚨 [함정 방어] Google News 선택 시 NewsAPI 파일이 섞여 들어오지 않도록 차단
+        if source == "Google News" and "NewsAPI" in file_name:
+            continue
+
+        if file_name.startswith(prefix) and file_name.endswith(".parquet"):
+            date_str = file_name.replace(prefix, "").replace(".parquet", "")
             try:
                 start_date, end_date = date_str.split("_to_")
                 label = f"{start_date} ~ {end_date}"
@@ -62,7 +79,7 @@ def get_available_periods(data_dir):
             except ValueError:
                 pass
     
-    # 💡 [핵심] 최신 파일이 위로 올라오도록 내림차순 정렬 (reverse=True)
+    # 최신 파일이 위로 올라오도록 내림차순 정렬
     return dict(sorted(file_map.items(), reverse=True))
 
 @st.cache_data
@@ -73,7 +90,7 @@ def load_and_concat_data(selected_files_dict):
     for period_label, file_path in selected_files_dict.items():
         temp_df = pd.read_parquet(file_path)
         start_date, end_date = period_label.split(" ~ ")
-        short_date_format = f"{start_date[2:]}~{end_date[2:]}"
+        short_date_format = f"{start_date[2:]}～{end_date[2:]}" # 전각 물결표 사용
         temp_df['도출_기간'] = short_date_format
         df_list.append(temp_df)
         
@@ -82,53 +99,53 @@ def load_and_concat_data(selected_files_dict):
     return pd.DataFrame()
 
 @st.cache_data
-def load_embedding_dict(data_dir):
-    dict_path = os.path.join(data_dir, 'keyword_embeddings_dict.pkl')
+def load_embedding_dict(data_dir, source):
+    # 💡 [추가] 소스에 맞는 임베딩 사전 파일명 동적 할당
+    dict_filename = 'keyword_embeddings_dict_NewsAPI.pkl' if source == "News API" else 'keyword_embeddings_dict.pkl'
+    dict_path = os.path.join(data_dir, dict_filename)
+    
     if os.path.exists(dict_path):
         with open(dict_path, 'rb') as f:
             return pickle.load(f)
     return {}
 
-# 1) 파일 목록 가져오기
-file_map = get_available_periods(DATA_DIR)
+# 1) 파일 목록 가져오기 (선택된 소스 전달)
+file_map = get_available_periods(DATA_DIR, data_source)
 if not file_map:
-    st.error(f"'{DATA_DIR}' 폴더에서 분석 가능한 Parquet 파일을 찾을 수 없습니다.")
+    st.error(f"'{DATA_DIR}' 폴더에서 '{data_source}' 기반의 Parquet 파일을 찾을 수 없습니다.")
     st.stop()
 
 # 2) 기간 리스트 추출 (최신순)
 periods = list(file_map.keys())
-latest_period = periods[0] # 가장 첫 번째 요소 = 가장 최신 파일
+latest_period = periods[0]
 
-# 3) 사이드바: 카테고리처럼 다중 선택하는 기간 UI
+# 3) 사이드바: 기간 UI
 st.sidebar.markdown("### 📅 분석 기간 설정")
 st.sidebar.caption("보고 싶은 주차를 추가로 선택하여 병합할 수 있습니다.")
 
-# 💡 [핵심 UI] default 값으로 가장 최신 주차를 넣어줍니다.
 selected_periods = st.sidebar.multiselect(
     "조회할 기간 선택",
     options=periods,
     default=[latest_period], 
     placeholder="기간을 선택해주세요",
-    format_func=lambda x: f"{x.split(' ~ ')[0][2:]}～{x.split(' ~ ')[1][2:]}" # 2026-03-30 ~ 2026-04-12 -> 26-03-30~26-04-12
+    format_func=lambda x: f"{x.split(' ~ ')[0][2:]}～{x.split(' ~ ')[1][2:]}"
 )
 
-# 4) 예외 처리: 사용자가 'X'를 눌러서 모든 기간을 지워버렸을 때
+# 4) 예외 처리
 if not selected_periods:
     st.warning("⚠️ 최소 1개 이상의 기간을 선택해야 데이터를 볼 수 있습니다.")
     st.stop()
 
-# 5) 선택된 기간에 해당하는 파일 경로만 딕셔너리로 추출
+# 5) 선택된 기간에 해당하는 파일 경로만 추출
 selected_files = {p: file_map[p] for p in selected_periods}
 
-# 6) 필터링된 파일들을 병합하여 로드
+# 6) 필터링된 파일 및 해당 소스의 임베딩 사전 로드
 df = load_and_concat_data(selected_files)
-emb_dict = load_embedding_dict(DATA_DIR)
+emb_dict = load_embedding_dict(DATA_DIR, data_source)
 
 # 7) 메인 화면 상단 안내 문구
-# 선택한 주차들을 화면에 텍스트로 가볍게 뿌려줍니다.
 selected_periods_str = ", ".join([p.split(" ~ ")[0][2:] + "～" + p.split(" ~ ")[1][2:] for p in selected_periods])
-st.caption(f"🕒 현재 조회 중인 기간: **{selected_periods_str}** (총 **{len(selected_files)}**개 주차 병합됨)")
-
+st.caption(f"📌 데이터 출처: **{data_source}** | 🕒 조회 기간: **{selected_periods_str}** (총 **{len(selected_files)}**개 주차 병합)")
 # ---------------------------------------------------------
 # 3. 사이드바: 필터 및 고급 검색창
 # ---------------------------------------------------------
