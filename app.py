@@ -43,11 +43,35 @@ def set_search_keyword(keyword):
     st.session_state.search_query = keyword
 
 # ---------------------------------------------------------
-# 2. 데이터 및 임베딩 사전 로드 (다중 기간 및 소스 병합 기능 포함)
+# 2. 데이터 및 임베딩 사전 로드 (다중 지역 병합 완벽 지원)
 # ---------------------------------------------------------
-DATA_DIR = "data"
 
-# 💡 [추가] 사이드바 최상단: 데이터 소스 선택 라디오 버튼
+# 💡 [수정] 사이드바 최상단: 분석 대상 국가/지역 복수 선택 (Multiselect)
+st.sidebar.markdown("### 🌎 분석 대상 국가/지역")
+selected_regions = st.sidebar.multiselect(
+    "분석할 지역을 모두 선택하세요",
+    options=["미국+한국", "중국"],
+    default=["미국+한국"], # 기본적으로 하나는 선택되어 있도록 설정
+    placeholder="지역을 선택해주세요"
+)
+
+if not selected_regions:
+    st.warning("⚠️ 최소 1개 이상의 지역을 선택해야 합니다.")
+    st.stop()
+
+# 💡 선택된 지역들에 대한 경로 매핑
+region_map = {
+    "미국+한국": "data_for_google_EN_KR",
+    "중국": "data_for_google_HK_TW"
+}
+
+# 선택된 지역들의 데이터(result) 및 임베딩 경로 리스트 생성
+result_dirs = [os.path.join(region_map[r], "result") for r in selected_regions]
+emb_dirs = [os.path.join(region_map[r], "embeddings") for r in selected_regions]
+
+st.sidebar.markdown("---")
+
+# 데이터 소스 선택
 st.sidebar.markdown("### 🗄️ 데이터 소스 설정")
 data_source = st.sidebar.radio(
     "뉴스 수집 출처를 선택하세요",
@@ -58,94 +82,125 @@ data_source = st.sidebar.radio(
 st.sidebar.markdown("---")
 
 @st.cache_data
-def get_available_periods(data_dir, source):
+def get_available_periods(data_dirs_list, source):
+    """여러 지역 폴더를 순회하며 공통/개별 주차 파일들을 묶어주는 함수"""
     file_map = {}
-    if not os.path.exists(data_dir): return file_map
-        
-    # 💡 [추가] 소스에 따른 파일 접두사 설정
     prefix = "Micro_Topics_NewsAPI_" if source == "News API" else "Micro_Topics_"
 
-    for file_name in os.listdir(data_dir):
-        # 🚨 [함정 방어] Google News 선택 시 NewsAPI 파일이 섞여 들어오지 않도록 차단
-        if source == "Google News" and "NewsAPI" in file_name:
+    for data_dir in data_dirs_list:
+        if not os.path.exists(data_dir): 
             continue
+            
+        for file_name in os.listdir(data_dir):
+            if source == "Google News" and "NewsAPI" in file_name:
+                continue
 
-        if file_name.startswith(prefix) and file_name.endswith(".parquet"):
-            date_str = file_name.replace(prefix, "").replace(".parquet", "")
-            try:
-                start_date, end_date = date_str.split("_to_")
-                label = f"{start_date} ~ {end_date}"
-                file_map[label] = os.path.join(data_dir, file_name)
-            except ValueError:
-                pass
+            if file_name.startswith(prefix) and file_name.endswith(".parquet"):
+                date_str = file_name.replace(prefix, "").replace(".parquet", "")
+                try:
+                    start_date, end_date = date_str.split("_to_")
+                    label = f"{start_date} ~ {end_date}"
+                    
+                    # 💡 기간(label)을 키로 삼고, 해당 기간의 여러 지역 파일 경로를 리스트로 저장
+                    if label not in file_map:
+                        file_map[label] = []
+                    file_map[label].append(os.path.join(data_dir, file_name))
+                except ValueError:
+                    pass
     
-    # 최신 파일이 위로 올라오도록 내림차순 정렬
     return dict(sorted(file_map.items(), reverse=True))
 
 @st.cache_data
 def load_and_concat_data(selected_files_dict):
-    """여러 기간의 Parquet 파일을 읽어와 하나로 합치는 함수"""
+    """선택된 주차에 속한 모든 지역의 파일을 하나로 합치는 함수"""
     df_list = []
-    
-    for period_label, file_path in selected_files_dict.items():
-        temp_df = pd.read_parquet(file_path)
-        start_date, end_date = period_label.split(" ~ ")
-        short_date_format = f"{start_date[2:]}～{end_date[2:]}" # 전각 물결표 사용
-        temp_df['도출_기간'] = short_date_format
-        df_list.append(temp_df)
-        
+    for period_label, file_paths in selected_files_dict.items():
+        for file_path in file_paths:
+            temp_df = pd.read_parquet(file_path)
+            
+            start_date, end_date = period_label.split(" ~ ")
+            short_date_format = f"{start_date[2:]}～{end_date[2:]}"
+            temp_df['도출_기간'] = short_date_format
+            
+            # 💡 [디테일 추가] 어느 지역에서 온 데이터인지 칼럼 추가
+            if "EN_KR" in file_path:
+                temp_df['데이터_지역'] = "🇺🇸미국+🇰🇷한국"
+            elif "HK_TW" in file_path:
+                temp_df['데이터_지역'] = "🇨🇳중국(HK_TW)"
+                
+            df_list.append(temp_df)
+            
     if df_list:
         return pd.concat(df_list, ignore_index=True)
     return pd.DataFrame()
 
 @st.cache_data
-def load_embedding_dict(data_dir, source):
-    # 💡 [추가] 소스에 맞는 임베딩 사전 파일명 동적 할당
+def load_embedding_dict(emb_dirs_list, source):
+    """여러 지역의 임베딩 사전을 읽어와 하나로 통합하는 함수"""
     dict_filename = 'keyword_embeddings_dict_NewsAPI.pkl' if source == "News API" else 'keyword_embeddings_dict.pkl'
-    dict_path = os.path.join(data_dir, dict_filename)
+    combined_dict = {}
     
-    if os.path.exists(dict_path):
-        with open(dict_path, 'rb') as f:
-            return pickle.load(f)
-    return {}
+    for emb_dir in emb_dirs_list:
+        dict_path = os.path.join(emb_dir, dict_filename)
+        if os.path.exists(dict_path):
+            with open(dict_path, 'rb') as f:
+                temp_dict = pickle.load(f)
+                combined_dict.update(temp_dict) # 💡 파이썬 update()로 딕셔너리 안전하게 병합
+                
+    return combined_dict
 
-# 1) 파일 목록 가져오기 (선택된 소스 전달)
-file_map = get_available_periods(DATA_DIR, data_source)
+# 1) 파일 목록 가져오기 (여러 지역 경로 전달)
+file_map = get_available_periods(result_dirs, data_source)
+
 if not file_map:
-    st.error(f"'{DATA_DIR}' 폴더에서 '{data_source}' 기반의 Parquet 파일을 찾을 수 없습니다.")
+    st.error(f"⚠️ 선택하신 지역의 ({data_source}) 데이터를 찾을 수 없습니다.")
     st.stop()
 
-# 2) 기간 리스트 추출 (최신순)
+# 2) 기간 리스트 추출 및 사이드바 선택 UI
 periods = list(file_map.keys())
 latest_period = periods[0]
 
-# 3) 사이드바: 기간 UI
 st.sidebar.markdown("### 📅 분석 기간 설정")
-st.sidebar.caption("보고 싶은 주차를 추가로 선택하여 병합할 수 있습니다.")
+st.sidebar.caption("양쪽 끝의 슬라이더를 움직여 조회할 기간을 설정하세요.")
 
-selected_periods = st.sidebar.multiselect(
-    "조회할 기간 선택",
-    options=periods,
-    default=[latest_period], 
-    placeholder="기간을 선택해주세요",
+# 💡 1. 슬라이더 UI의 직관성을 위해 기간 리스트를 '과거 ➡️ 최신' 순서로 뒤집습니다.
+chronological_periods = list(reversed(periods))
+
+# 💡 2. Multiselect 대신 Select Slider 사용 (범위 지정)
+selected_range = st.sidebar.select_slider(
+    "조회할 기간 범위 선택",
+    options=chronological_periods,
+    value=(latest_period, latest_period), # 기본값: 가장 최신 주차 1개만 선택된 상태
     format_func=lambda x: f"{x.split(' ~ ')[0][2:]}～{x.split(' ~ ')[1][2:]}"
 )
 
-# 4) 예외 처리
+# 💡 3. 슬라이더에서 선택된 시작점과 끝점(튜플)을 받아, 그사이에 있는 모든 주차를 리스트로 추출합니다.
+start_period, end_period = selected_range
+start_idx = chronological_periods.index(start_period)
+end_idx = chronological_periods.index(end_period)
+
+# 선택된 범위 안의 모든 기간을 가져옴
+selected_periods = chronological_periods[start_idx : end_idx + 1]
+
+# 💡 4. 기존 데이터 병합 로직들이 '최신순' 기준으로 짜여 있으므로, 데이터 일관성을 위해 다시 최신순으로 뒤집어 줍니다.
+selected_periods.reverse() 
+
 if not selected_periods:
-    st.warning("⚠️ 최소 1개 이상의 기간을 선택해야 데이터를 볼 수 있습니다.")
+    st.warning("⚠️ 기간을 선택해야 데이터를 볼 수 있습니다.")
     st.stop()
 
-# 5) 선택된 기간에 해당하는 파일 경로만 추출
+# 3) 선택된 기간의 파일 경로 리스트 추출
 selected_files = {p: file_map[p] for p in selected_periods}
 
-# 6) 필터링된 파일 및 해당 소스의 임베딩 사전 로드
+# 4) 병합된 데이터프레임 및 통합 임베딩 사전 로드
 df = load_and_concat_data(selected_files)
-emb_dict = load_embedding_dict(DATA_DIR, data_source)
+emb_dict = load_embedding_dict(emb_dirs, data_source)
 
-# 7) 메인 화면 상단 안내 문구
+# 5) 메인 화면 상단 안내 문구
 selected_periods_str = ", ".join([p.split(" ~ ")[0][2:] + "～" + p.split(" ~ ")[1][2:] for p in selected_periods])
-st.caption(f"📌 데이터 출처: **{data_source}** | 🕒 조회 기간: **{selected_periods_str}** (총 **{len(selected_files)}**개 주차 병합)")
+regions_str = ", ".join(selected_regions)
+st.caption(f"🌎 지역: **{regions_str}** | 📌 소스: **{data_source}** | 🕒 조회 기간: **{selected_periods_str}**")
+
 # ---------------------------------------------------------
 # 3. 사이드바: 필터 및 고급 검색창
 # ---------------------------------------------------------
