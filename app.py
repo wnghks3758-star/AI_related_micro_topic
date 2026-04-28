@@ -358,8 +358,10 @@ for index, row in sorted_df.iterrows():
     expander_title = f"[{row['도출_기간'].replace('~','～')}] 📌 {row['제목']} (키워드: {row['키워드']})"
     
     with st.expander(expander_title):
+        # 파이썬에서 JSON을 파싱하면 row['summary']는 이제 리스트(List)가 됩니다.
         st.markdown("#### 📝 핵심 인사이트 요약")
-        st.markdown(row['summary'])
+        for line in row['summary']:
+            st.markdown(f"- {line}")
         
         st.markdown(f"**📂 카테고리:** {row['카테고리']}")
 
