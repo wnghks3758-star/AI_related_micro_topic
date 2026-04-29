@@ -342,7 +342,8 @@ if user_query:
         )
 
         # LLM 호출 (온도를 0으로 하여 창의성을 억제하고 기계적인 추출만 수행)
-        llm_for_expansion = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        llm_for_expansion = ChatOpenAI(model="gpt-4o-mini", temperature=0, http_client=custom_http_client,
+                 api_key=st.secrets['api_key'])
 
         expanded_query = llm_for_expansion.predict(
             expansion_prompt.format(target_langs=target_langs_str, query=user_query)
