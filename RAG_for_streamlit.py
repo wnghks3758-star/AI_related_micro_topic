@@ -147,12 +147,12 @@ selected_files = {p: file_map[p] for p in selected_periods}
 # ==========================================
 # 💡 @st.cache_resource: 질문을 던질 때마다 DB를 다시 만들지 않도록 메모리에 고정합니다.
 @st.cache_resource(show_spinner=False)
-def build_hybrid_retriever(_files_dict):
+def build_hybrid_retriever(files_dict):
     texts = []
     metadatas = []
     vector_list = []
     
-    for period_label, file_paths in _files_dict.items():
+    for period_label, file_paths in files_dict.items():
         
         # 💡 리스트 안에 있는 여러 지역의 파일 경로를 하나씩 꺼내도록 for문을 한 번 더 돕니다.
         for file_path in file_paths:
