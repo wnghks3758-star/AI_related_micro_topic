@@ -314,8 +314,9 @@ if user_query:
         target_languages = [] # 기본적으로 한국어는 무조건 포함
 
         if "미국+한국" in selected_regions:
-            target_languages.append("영어(English)")
             target_languages.append("한국어")
+            target_languages.append("영어(English)")
+            
             
         if "중국" in selected_regions:
             # 💡 홍콩/대만 뉴스 검색을 위해 '번체'를 명시적으로 지시합니다.
@@ -329,15 +330,22 @@ if user_query:
         # =========================================================
         expansion_prompt = PromptTemplate.from_template(
             "당신은 글로벌 뉴스 검색 엔진의 '핵심 키워드 추출 및 번역 전문가'입니다.\n"
-            "사용자의 질문에서 문장 부호(따옴표 등)로 강조된 단어나, 검색에 필수적인 '명사(고유명사, 기술 용어, 기업명, 국가명 등)'만 엄격하게 추출하세요.\n"
-            "🚨 [금지사항]: 서술어, 조사, 부사, 감탄사, 질문형 어미(예: ~알려줘, ~어때, 어떻게, 자세히 등)는 절대 포함하지 마십시오.\n"
-            "추출된 핵심 키워드들을 반드시 '{target_langs}'로 각각 번역하여, 모두 공백으로 구분된 한 줄의 문자열로 출력하세요.\n\n"
-            "[예시 1]\n"
-            "검색어: 최근 \"마이크로소프트\"가 투자한 호주의 AI 교육에 대해 정리해줘\n"
-            "출력 (미국+한국 선택 시): 마이크로소프트 Microsoft 호주 Australia AI 교육 Education\n\n"
-            "[예시 2]\n"
+            "사용자의 질문에서 필수적인 '명사(고유명사, 기술 용어, 기업명 등)'만 추출하여, 반드시 요청된 타겟 언어('{target_langs}')로만 번역해 띄어쓰기로 구분된 한 줄로 출력하세요.\n\n"
+            "🚨 [엄수 규칙]:\n"
+            "1. 서술어, 조사, 부사, 질문형 어미(~알려줄래?, ~어때 등)는 절대 제외하세요.\n"
+            "2. '{target_langs}'에 포함되지 않은 언어는 단 한 단어도 출력하면 안 됩니다.\n\n"
+            "[작성 예시]\n"
+            "상황 1: 타겟 언어가 '한국어, 영어(English)' 일 때\n"
             "검색어: 애플의 자율주행 전기차 프로젝트 취소 소식 알려줄래?\n"
-            "출력 (중국 포함 시): 애플 Apple 蘋果 자율주행 Autonomous Driving 自動駕駛 전기차 EV 電動車 프로젝트 Project 專案 취소 Cancellation 取消\n\n"
+            "출력: 애플 Apple 자율주행 Autonomous Driving 전기차 EV 프로젝트 Project 취소 Cancellation\n\n"
+            "상황 2: 타겟 언어가 중국어 번체(Traditional Chinese, 繁體字)' 일 때\n"
+            "검색어: 애플의 자율주행 전기차 프로젝트 취소 소식 알려줄래?\n"
+            "출력: 蘋果 自動駕駛 電動車 專案 取消\n\n"
+            "상황 3: 타겟 언어가 '한국어, 영어(English), 중국어 번체(Traditional Chinese, 繁體字)' 일 때\n"
+            "검색어: 애플의 자율주행 전기차 프로젝트 취소 소식 알려줄래?\n"
+            "출력: 애플 Apple 蘋果 자율주행 Autonomous Driving 自動駕駛 전기차 EV 電動車 프로젝트 Project 專案 취소 Cancellation 取消\n\n"
+            "--- 본격적인 작업 시작 ---\n"
+            "요청된 타겟 언어: {target_langs}\n"
             "검색어: {query}\n"
             "출력:"
         )
