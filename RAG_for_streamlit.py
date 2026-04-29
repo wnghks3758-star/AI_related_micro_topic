@@ -311,10 +311,11 @@ if user_query:
         # =========================================================
         # 1. 체크박스 선택값에 따른 번역 타겟 언어 동적 생성
         # =========================================================
-        target_languages = ["한국어"] # 기본적으로 한국어는 무조건 포함
+        target_languages = [] # 기본적으로 한국어는 무조건 포함
 
         if "미국+한국" in selected_regions:
             target_languages.append("영어(English)")
+            target_languages.appen("한국어")
             
         if "중국" in selected_regions:
             # 💡 홍콩/대만 뉴스 검색을 위해 '번체'를 명시적으로 지시합니다.
