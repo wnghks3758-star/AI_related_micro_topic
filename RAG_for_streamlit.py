@@ -1,0 +1,334 @@
+
+import os
+import numpy as np
+import pandas as pd
+import streamlit as st
+import pickle
+
+# 🚨 최신 LangChain 패키지 임포트
+from langchain_community.vectorstores import FAISS
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_core.prompts import PromptTemplate
+from langchain_classic.chains import create_retrieval_chain
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+from langchain_community.vectorstores.utils import DistanceStrategy
+from langchain_classic.retrievers import EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
+from langchain_core.documents import Document
+import httpx
+import warnings
+
+# verify=False를 쓰면 터미널에 "보안상 위험할 수 있습니다"라는 
+# 경고(InsecureRequestWarning)가 폭탄처럼 쏟아지므로, 이를 숨겨주는 코드입니다.
+warnings.filterwarnings("ignore")
+
+# ==========================================
+# 1. 사이드바: 분석 대상 국가/지역 (체크박스 적용)
+# ==========================================
+st.sidebar.markdown("### 🌎 분석 대상 국가/지역")
+
+# 지역별 베이스 디렉토리 매핑
+region_map = {
+    "미국+한국": "data_for_google_EN_KR",
+    "중국": "data_for_google_HK_TW"
+}
+
+selected_regions = []
+
+# 💡 체크박스로 UI 변경 (기본적으로 '미국+한국'은 체크된 상태로 설정)
+if st.sidebar.checkbox("🇺🇸 미국 + 🇰🇷 한국", value=True):
+    selected_regions.append("미국+한국")
+    
+if st.sidebar.checkbox("🇨🇳 중국 (홍콩/대만 포함)", value=False):
+    selected_regions.append("중국")
+
+if not selected_regions:
+    st.warning("⚠️ 최소 1개 이상의 지역을 선택해야 합니다.")
+    st.stop()
+
+# 선택된 지역들의 CSV 데이터 폴더 경로 리스트 생성 (예: data_for_google_EN_KR/data)
+data_dirs = [os.path.join(region_map[r], "articles") for r in selected_regions]
+
+st.sidebar.markdown("---")
+
+# ==========================================
+# 2. 사이드바: 데이터 소스 설정
+# ==========================================
+st.sidebar.markdown("### 🗄️ 데이터 소스 설정")
+data_source = st.sidebar.radio(
+    "뉴스 수집 출처를 선택하세요",
+    options=["Google News", "News API"],
+    index=0
+)
+st.sidebar.markdown("---")
+
+# ==========================================
+# 3. 데이터 폴더 동시 스캔 함수
+# ==========================================
+@st.cache_data
+def get_available_periods(data_dirs_list, source):
+    """여러 지역의 data 폴더를 순회하며 공통/개별 주차 CSV 파일들을 묶어줍니다."""
+    file_map = {}
+    prefix = "NewsAPI_articles_AI_" if source == "News API" else "google_news_articles_AI_"
+
+    for data_dir in data_dirs_list:
+        if not os.path.exists(data_dir): 
+            continue
+
+        for file_name in os.listdir(data_dir):
+            if source == "Google News" and "NewsAPI" in file_name:
+                continue
+                
+            if file_name.startswith(prefix) and file_name.endswith(".csv"): # CSV 파일 기준
+                date_str = file_name.replace(prefix, "").replace(".csv", "")
+                try:
+                    start_date, end_date = date_str.split("_to_")
+                    label = f"{start_date} ~ {end_date}"
+                    
+                    # 💡 기간(label)을 키로, 해당 기간의 여러 지역 파일 경로를 리스트로 저장
+                    if label not in file_map:
+                        file_map[label] = []
+                    file_map[label].append(os.path.join(data_dir, file_name))
+                except ValueError:
+                    pass
+                    
+    # 최신 기간이 위로 오도록 내림차순 정렬
+    return dict(sorted(file_map.items(), reverse=True))
+
+# 파일 목록 스캔
+file_map = get_available_periods(data_dirs, data_source)
+
+if not file_map:
+    st.sidebar.error(f"선택하신 지역에서 '{data_source}' 기반의 CSV 파일을 찾을 수 없습니다.")
+    st.stop()
+
+# ==========================================
+# 4. 사이드바: 분석 기간 설정
+# ==========================================
+st.sidebar.markdown("### 📅 분석 기간 설정")
+selected_periods = st.sidebar.multiselect(
+    "조회할 기간 선택",
+    options=list(file_map.keys()),
+    default=[list(file_map.keys())[0]], 
+    placeholder="기간을 선택해주세요"
+)
+
+if not selected_periods:
+    st.warning("⚠️ 최소 1개 이상의 기간을 선택해야 데이터를 볼 수 있습니다.")
+    st.stop()
+
+# 💡 선택된 기간의 파일 경로 추출 (값은 단일 문자열이 아닌 '경로 리스트' 형태가 됨)
+selected_files = {p: file_map[p] for p in selected_periods}
+
+# ==========================================
+# 2. 벡터 DB 구축 (Streamlit 캐싱 적용하여 속도 최적화!)
+# ==========================================
+# 💡 @st.cache_resource: 질문을 던질 때마다 DB를 다시 만들지 않도록 메모리에 고정합니다.
+@st.cache_resource(show_spinner=False)
+def build_hybrid_retriever(_files_dict):
+    texts = []
+    metadatas = []
+    vector_list = []
+    
+    for period_label, file_paths in _files_dict.items():
+        
+        # 💡 리스트 안에 있는 여러 지역의 파일 경로를 하나씩 꺼내도록 for문을 한 번 더 돕니다.
+        for file_path in file_paths:
+            
+            # 1) CSV 로드
+            try:
+                temp_df = pd.read_csv(file_path, encoding='utf-8-sig').dropna(subset=['text']).reset_index(drop=True)
+            except UnicodeDecodeError:
+                temp_df = pd.read_csv(file_path, encoding='cp949').dropna(subset=['text']).reset_index(drop=True)
+
+            # 2) NPY 로드 (이하 기존 코드와 동일)
+            directory, file_name = os.path.split(file_path)
+            new_directory = directory.replace("articles", "embeddings")
+
+            # 3. 파일명 변경 (.csv -> .npy, articles_AI -> articles_AI_embedding)
+            new_file_name = file_name.replace(".csv", ".npy").replace("articles_AI", "articles_embeddings_AI")
+
+            # 4. OS 환경에 맞게(/ 또는 \) 다시 결합
+            npy_path = os.path.join(new_directory, new_file_name)
+
+            if not os.path.exists(npy_path):
+                st.error(f"임베딩 파일을 찾을 수 없습니다: {npy_path}")
+                continue
+                
+            temp_vectors = np.load(npy_path)
+
+            # 3) 정합성 검증
+            if len(temp_df) != len(temp_vectors):
+                st.error(f"⚠️ 데이터 꼬임: {period_label}의 CSV 행({len(temp_df)})과 NPY 벡터({len(temp_vectors)}) 수가 다릅니다.")
+                continue
+
+            # 4) 데이터 매핑
+            for i, row in temp_df.iterrows():
+                content = str(row.get('contents_clean', row.get('text', ''))).strip()
+                if not content: continue
+                    
+                texts.append(content)
+                metadatas.append({
+                    "title": row.get('title', row.get('제목', '제목 없음')),
+                    "url": row.get('page_url', row.get('URL', '#')),
+                    "date": period_label
+                })
+            vector_list.append(temp_vectors)
+
+    if vector_list:
+        all_vectors = np.vstack(vector_list)
+        text_embedding_pairs = list(zip(texts, all_vectors.tolist()))
+        
+        # 💡 SSL 검사를 무시하는 커스텀 클라이언트 생성
+        custom_http_client = httpx.Client(verify=False)
+        
+        # 💡 생성한 클라이언트를 임베딩 모델에 주입
+        embeddings_model = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            http_client=custom_http_client,
+            api_key=st.secrets['api_key']
+        )
+        
+        # ------------------------------------------------------
+        # 1. FAISS 벡터 검색기 (의미 기반) 구축
+        # ------------------------------------------------------
+        faiss_vectorstore = FAISS.from_embeddings(
+            text_embeddings=text_embedding_pairs, 
+            embedding=embeddings_model, 
+            metadatas=metadatas,
+            distance_strategy=DistanceStrategy.MAX_INNER_PRODUCT
+        )
+        
+        vector_retriever = faiss_vectorstore.as_retriever(
+            search_type="similarity_score_threshold", 
+            search_kwargs={"score_threshold": 0.72, "k": 25} 
+        )
+        
+        # ------------------------------------------------------
+        # 2. 원본 문서를 LangChain Document 객체로 변환
+        # ------------------------------------------------------
+        # 💡 연구원님이 짚으신 바로 그 부분입니다! 텍스트와 메타데이터를 다시 묶어줍니다.
+        docs = [Document(page_content=t, metadata=m) for t, m in zip(texts, metadatas)]
+        
+        # ------------------------------------------------------
+        # 3. BM25 키워드 검색기 (정확도 기반) 구축
+        # ------------------------------------------------------
+        bm25_retriever = BM25Retriever.from_documents(docs)
+        bm25_retriever.k = 25
+        
+        # ------------------------------------------------------
+        # 4. 하이브리드(앙상블) 검색기로 결합하여 반환
+        # ------------------------------------------------------
+        ensemble_retriever = EnsembleRetriever(
+            retrievers=[vector_retriever, bm25_retriever],
+            weights=[0.5, 0.5] # 벡터 50%, 키워드 50%
+        )
+        
+        return ensemble_retriever
+        
+    return None
+
+with st.spinner("선택된 기간의 데이터를 메모리에 로드하여 하이브리드 검색 DB를 구축하고 있습니다..."):
+    # 이제 반환받는 객체는 vectorstore가 아니라 완벽하게 세팅된 retriever 자체입니다!
+    retriever = build_hybrid_retriever(selected_files)
+
+if retriever is None:
+    st.error("검색 DB를 구축할 수 없습니다. 데이터를 확인해 주세요.")
+    st.stop()
+
+# ==========================================
+# 3. 최신 RAG 체인 구성 (LCEL 문법)
+# ==========================================
+
+# 🚨 반드시 {input} 변수를 사용해야 합니다!
+prompt_template = """
+당신은 글로벌 기술 동향, 산업 정책 및 경제 지표를 심층 분석하는 전문 수석 연구원입니다.
+아래 제공된 [참고 문서]는 수집된 다국어 뉴스 기사 원문이며, 각 문서 앞에는 [문서 1], [문서 2]와 같이 고유 번호가 부여되어 있습니다.
+
+[분석 및 작성 지침]
+1. 다국어 교차 분석: 언어에 구애받지 말고 핵심 문맥과 사건을 정확히 종합하여 한국어로 요약하십시오.
+2. 팩트 그라운딩: 철저하게 [참고 문서]에 명시된 사실에만 근거하십시오.
+3. 📌 출처 주석 표기 (가장 중요): 작성하는 모든 문장의 끝에는 반드시 해당 사실의 근거가 된 문서 번호를 주석으로 달아주세요. (예: 삼성전자는 AI 메모리 수요 증가로 역대 최대 이익을 기록했다 [문서 1][문서 3].)
+4. 학술적 보고서 톤 유지: "~함", "~임" 형태의 객관적인 문체를 사용하십시오.
+
+[출력 구조]
+- **핵심 요약**: 2~3줄 이내 요약 (주석 필수)
+- **상세 분석**: 논리적 흐름에 따라 글머리 기호(-)를 활용하여 서술 (주석 필수)
+
+[참고 문서]
+{context}
+
+[사용자 질문]
+{input}
+
+답변:"""
+
+PROMPT = PromptTemplate(template=prompt_template, input_variables=["context", "input"])
+
+custom_http_client = httpx.Client(verify=False)
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, http_client=custom_http_client,
+                 api_key=st.secrets['api_key'])
+
+
+st.success("✅ RAG 시스템 준비 완료! 질문을 입력해 주세요.")
+
+# ==========================================
+# 4. Streamlit 채팅 UI 연동
+# ==========================================
+
+# 💡 [핵심] 기존의 복잡했던 체인 대신, 프롬프트와 LLM만 직접 연결합니다.
+chain = PROMPT | llm
+
+st.markdown("### 💬 AI 뉴스 분석 어시스턴트")
+user_query = st.text_input("질문을 입력하세요 (예: 2026년 3월에 엔비디아와 삼성이 같이 한 일 요약해 줘)")
+
+if user_query:
+    with st.spinner("수집된 원문(의미+키워드)을 분석하여 답변을 생성 중입니다..."):
+        
+        # =========================================================
+        # 1. 하이브리드 검색 실행 (.invoke 사용)
+        # =========================================================
+        # 내부적으로 FAISS(0.72 이상 필터링 완료)와 BM25가 각자 25개씩 찾아온 뒤,
+        # RRF 알고리즘으로 융합하여 가장 중요한 문서부터 순서대로 정렬해 줍니다.
+        raw_docs = retriever.invoke(user_query)
+        
+        # 💡 LLM 컨텍스트 윈도우 초과 방지를 위해, 융합 랭킹 최상위 15~20개만 자릅니다.
+        source_docs = raw_docs[:20] 
+        
+        # 2. 예외 처리: 검색 결과가 없을 때
+        if not source_docs:
+            st.warning("⚠️ 선택하신 기간의 데이터 중 질문과 관련도가 높은 기사를 찾지 못했습니다.")
+            st.info("💡 **Tip:** 검색 기간을 더 넓게 선택하시거나, 다른 키워드로 질문해 보세요!")
+            
+        else:
+            # 3. 문서 번호표 부착 및 텍스트 결합
+            context_text = ""
+            
+            for i, doc in enumerate(source_docs):
+                doc_number = i + 1
+                doc.metadata["doc_index"] = doc_number
+                # 💡 앙상블은 명시적 '점수' 대신 '순위(Rank)'를 보장하므로 점수 저장 로직은 삭제합니다.
+                
+                context_text += f"[문서 {doc_number}]\n제목: {doc.metadata.get('title')}\n내용: {doc.page_content}\n\n"
+            
+            # 4. LLM에 질문과 컨텍스트 전달하여 답변 생성
+            result = chain.invoke({"context": context_text, "input": user_query})
+            answer = result.content
+            
+            st.markdown("#### 🤖 AI 분석 결과")
+            st.info(answer)
+            
+            # 5. 출처 출력 (점수 대신 융합 랭킹 순위로 표기)
+            st.markdown("#### 📑 참고한 기사 출처 (하이브리드 랭킹순)")
+            
+            seen_urls = set()
+            for doc in source_docs:
+                url = doc.metadata.get("url", "")
+                if url not in seen_urls:
+                    idx = doc.metadata.get("doc_index")
+                    title = doc.metadata.get("title", "제목 없음")
+                    date = doc.metadata.get("date", "")
+                    
+                    # 점수 대신 [1], [2] 같은 랭킹 번호가 곧 중요도를 의미합니다.
+                    st.markdown(f"**[{idx}]** [{date}] [{title}]({url})")
+                    seen_urls.add(url)
