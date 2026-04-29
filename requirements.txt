@@ -1,3 +1,19 @@
+# 데이터 처리 및 UI
 streamlit
 pandas
 pyarrow
+numpy
+
+# LangChain 코어 및 확장 생태계
+langchain
+langchain-core
+langchain-community
+langchain-openai
+
+# 검색기(Retriever) 및 벡터 DB 구동을 위한 필수 의존성 라이브러리
+faiss-cpu
+rank-bm25
+
+# 통신 및 환경변수(보안)
+httpx
+python-dotenv
