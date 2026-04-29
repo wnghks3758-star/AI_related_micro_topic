@@ -67,6 +67,7 @@ if not selected_regions:
     st.warning("⚠️ 최소 1개 이상의 지역을 선택해야 합니다.")
     st.stop()
 
+
 # 선택된 지역들의 데이터(result) 및 임베딩 경로 리스트 생성
 result_dirs = [os.path.join(region_map[r], "result") for r in selected_regions]
 emb_dirs = [os.path.join(region_map[r], "embeddings") for r in selected_regions]
@@ -235,6 +236,16 @@ if not selected_categories:
     cat_df = df
 else:
     cat_df = df[df['카테고리'].isin(selected_categories)]
+
+# 사이드바 내용이 다 끝난 후 맨 밑에 시각적 분리선 긋기
+st.sidebar.markdown("---") 
+
+# 💡 하이퍼링크 역할을 하는 링크 버튼 생성
+st.sidebar.link_button(
+    label="💻 RAG 시스템", # 버튼에 표시될 텍스트 (이모지 활용 추천)
+    url="https://airelatedmicrotopic-rag.streamlit.app/",           # 이동할 실제 웹사이트 주소
+    use_container_width=True                  # 버튼 길이를 사이드바 너비에 꽉 차게 맞춤 (디자인이 훨씬 예뻐짐)
+)
 
 # ---------------------------------------------------------
 # 4. 메인 화면 1: 기본 토픽 키워드 Top 10 추출
