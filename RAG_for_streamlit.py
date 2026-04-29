@@ -110,7 +110,6 @@ st.sidebar.markdown("### 📅 분석 기간 설정")
 periods = list(file_map.keys())
 latest_period = periods[0]
 
-st.sidebar.markdown("### 📅 분석 기간 설정")
 st.sidebar.caption("양쪽 끝의 슬라이더를 움직여 조회할 기간을 설정하세요.")
 
 # 💡 1. 슬라이더 UI의 직관성을 위해 기간 리스트를 '과거 ➡️ 최신' 순서로 뒤집습니다.
@@ -369,7 +368,8 @@ if user_query:
         # 2. [투 트랙 검색] 엔진별로 가장 잘하는 쿼리 따로 던지기!
         # =========================================================
         # FAISS(벡터)에는 문맥이 살아있는 원본 질문을!
-        faiss_docs = vector_retriever.invoke(user_query)
+        multilingual_faiss_query = f"{user_query} {expanded_query}"
+        faiss_docs = vector_retriever.invoke(multilingual_faiss_query)
         
         # BM25(키워드)에는 번역된 알짜배기 명사들만!
         bm25_docs = bm25_retriever.invoke(expanded_query)
