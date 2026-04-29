@@ -18,6 +18,9 @@ from langchain_core.documents import Document
 import httpx
 import warnings
 
+import jieba
+import re
+
 # verify=False를 쓰면 터미널에 "보안상 위험할 수 있습니다"라는 
 # 경고(InsecureRequestWarning)가 폭탄처럼 쏟아지므로, 이를 숨겨주는 코드입니다.
 warnings.filterwarnings("ignore")
@@ -234,7 +237,29 @@ def build_hybrid_retriever(files_dict):
         # ------------------------------------------------------
         # 3. BM25 키워드 검색기 (정확도 기반) 구축
         # ------------------------------------------------------
-        bm25_retriever = BM25Retriever.from_documents(docs)
+
+        # =========================================================
+        # 언어별 맞춤형 스마트 토크나이저
+        # =========================================================
+        def smart_global_tokenizer(text):
+            tokens = []
+            # 정규표현식으로 '한자(중국어) 덩어리'와 '비한자(한국어/영어 등) 덩어리'를 분리합니다.
+            parts = re.split(r'([\u4e00-\u9fff]+)', text)
+            
+            for part in parts:
+                if not part.strip():
+                    continue
+                    
+                # 1. 한자(중국어)인 경우 -> jieba에게 맡김
+                if re.match(r'[\u4e00-\u9fff]', part):
+                    tokens.extend(jieba.lcut(part))
+                # 2. 한국어, 영어, 숫자 등인 경우 -> 기본 띄어쓰기(split) 사용
+                else:
+                    tokens.extend(part.split())
+                    
+            return [t.strip() for t in tokens if t.strip()]
+        
+        bm25_retriever = BM25Retriever.from_documents(docs, preprocess_func=smart_global_tokenizer)
         bm25_retriever.k = 25
         
         # ------------------------------------------------------
