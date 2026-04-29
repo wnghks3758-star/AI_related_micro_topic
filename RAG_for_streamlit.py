@@ -326,6 +326,7 @@ chain = PROMPT | llm
 
 
 st.set_page_config(page_title="AI 뉴스 분석 어시스턴트", page_icon="💬", layout="wide")
+st.title("💬 AI 뉴스 분석 어시스턴트")
 user_query = st.text_input("질문을 입력하세요 (예: 2026년 3월에 엔비디아와 삼성이 같이 한 일 요약해 줘)")
 
 
