@@ -106,19 +106,41 @@ if not file_map:
 # 4. 사이드바: 분석 기간 설정
 # ==========================================
 st.sidebar.markdown("### 📅 분석 기간 설정")
-selected_periods = st.sidebar.multiselect(
-    "조회할 기간 선택",
-    options=list(file_map.keys()),
-    default=[list(file_map.keys())[0]], 
-    placeholder="기간을 선택해주세요"
+# 2) 기간 리스트 추출 및 사이드바 선택 UI
+periods = list(file_map.keys())
+latest_period = periods[0]
+
+st.sidebar.markdown("### 📅 분석 기간 설정")
+st.sidebar.caption("양쪽 끝의 슬라이더를 움직여 조회할 기간을 설정하세요.")
+
+# 💡 1. 슬라이더 UI의 직관성을 위해 기간 리스트를 '과거 ➡️ 최신' 순서로 뒤집습니다.
+chronological_periods = list(reversed(periods))
+
+# 💡 2. Multiselect 대신 Select Slider 사용 (범위 지정)
+selected_range = st.sidebar.select_slider(
+    "조회할 기간 범위 선택",
+    options=chronological_periods,
+    value=(latest_period, latest_period), # 기본값: 가장 최신 주차 1개만 선택된 상태
+    format_func=lambda x: f"{x.split(' ~ ')[0][2:]}～{x.split(' ~ ')[1][2:]}"
 )
 
+# 💡 3. 슬라이더에서 선택된 시작점과 끝점(튜플)을 받아, 그사이에 있는 모든 주차를 리스트로 추출합니다.
+start_period, end_period = selected_range
+start_idx = chronological_periods.index(start_period)
+end_idx = chronological_periods.index(end_period)
+
+selected_periods = chronological_periods[start_idx : end_idx + 1]
+
+# 💡 4. 기존 데이터 병합 로직들이 '최신순' 기준으로 짜여 있으므로, 데이터 일관성을 위해 다시 최신순으로 뒤집어 줍니다.
+selected_periods.reverse() 
+
 if not selected_periods:
-    st.warning("⚠️ 최소 1개 이상의 기간을 선택해야 데이터를 볼 수 있습니다.")
+    st.warning("⚠️ 기간을 선택해야 데이터를 볼 수 있습니다.")
     st.stop()
 
-# 💡 선택된 기간의 파일 경로 추출 (값은 단일 문자열이 아닌 '경로 리스트' 형태가 됨)
+# 3) 선택된 기간의 파일 경로 리스트 추출
 selected_files = {p: file_map[p] for p in selected_periods}
+
 
 # ==========================================
 # 2. 벡터 DB 구축 (Streamlit 캐싱 적용하여 속도 최적화!)
