@@ -19,5 +19,4 @@ httpx
 python-dotenv
 
 # 토크나이저
-re
 jieba
