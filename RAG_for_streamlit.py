@@ -315,7 +315,7 @@ if user_query:
 
         if "미국+한국" in selected_regions:
             target_languages.append("영어(English)")
-            target_languages.appen("한국어")
+            target_languages.append("한국어")
             
         if "중국" in selected_regions:
             # 💡 홍콩/대만 뉴스 검색을 위해 '번체'를 명시적으로 지시합니다.
