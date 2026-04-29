@@ -345,9 +345,10 @@ if user_query:
         llm_for_expansion = ChatOpenAI(model="gpt-4o-mini", temperature=0, http_client=custom_http_client,
                  api_key=st.secrets['api_key'])
 
-        expanded_query = llm_for_expansion.predict(
+        response_msg = llm_for_expansion.invoke(
             expansion_prompt.format(target_langs=target_langs_str, query=user_query)
         )
+        expanded_query = response_msg.content  # 텍스트만 쏙 빼내기
         
         # =========================================================
         # 1. 동적 쿼리 확장 (핵심 명사 추출) - 이전과 동일
