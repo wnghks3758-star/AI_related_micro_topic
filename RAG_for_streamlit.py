@@ -324,7 +324,8 @@ st.success("✅ RAG 시스템 준비 완료! 질문을 입력해 주세요.")
 # 💡 [핵심] 기존의 복잡했던 체인 대신, 프롬프트와 LLM만 직접 연결합니다.
 chain = PROMPT | llm
 
-st.markdown("### 💬 AI 뉴스 분석 어시스턴트")
+
+st.set_page_config(page_title="AI 뉴스 분석 어시스턴트", page_icon="💬", layout="wide")
 user_query = st.text_input("질문을 입력하세요 (예: 2026년 3월에 엔비디아와 삼성이 같이 한 일 요약해 줘)")
 
 
