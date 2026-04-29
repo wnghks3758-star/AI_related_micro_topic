@@ -6,28 +6,6 @@ import os
 import pickle
 
 # ---------------------------------------------------------
-# UI 스타일 강제 수정 (Multiselect 글자 잘림 방지)
-# ---------------------------------------------------------
-# st.markdown(
-#     """
-#     <style>
-#     /* multiselect 안의 태그(박스) 최대 너비를 100%로 늘림 */
-#     .stMultiSelect div[data-baseweb="select"] span[data-baseweb="tag"] {
-#         max-width: 150% !important;
-#     }
-    
-#     /* 태그 안의 텍스트가 줄바꿈되거나 다 보이도록 말줄임표(ellipsis) 제거 */
-#     .stMultiSelect div[data-baseweb="select"] span[data-baseweb="tag"] span {
-#         white-space: normal !important;
-#         overflow: visible !important;
-#         text-overflow: unset !important;
-#     }
-#     </style>
-#     """,
-#     unsafe_allow_html=True
-# )
-
-# ---------------------------------------------------------
 # 1. 페이지 기본 설정 및 상태 초기화
 # ---------------------------------------------------------
 st.set_page_config(page_title="AI 뉴스 인사이트 대시보드", page_icon="🌐", layout="wide")
@@ -46,17 +24,38 @@ def set_search_keyword(keyword):
 # 2. 데이터 및 임베딩 사전 로드 (다중 지역 병합 완벽 지원)
 # ---------------------------------------------------------
 
-# 💡 [수정] 사이드바 최상단: 분석 대상 국가/지역 복수 선택 (Multiselect)
+# ==========================================
+# 💡 [수정] 1. 사이드바 최상단: 데이터 소스 설정 (가장 먼저 질문!)
+# ==========================================
+st.sidebar.markdown("### 🗄️ 데이터 소스 설정")
+data_source = st.sidebar.radio(
+    "뉴스 수집 출처를 선택하세요",
+    options=["Google News", "News API"],
+    index=0
+)
+st.sidebar.markdown("---")
+
+# ==========================================
+# 💡 [수정] 2. 데이터 소스에 따른 동적 경로 매핑 및 지역 선택
+# ==========================================
 st.sidebar.markdown("### 🌎 분석 대상 국가/지역")
-# 지역별 베이스 디렉토리 매핑
-region_map = {
-    "미국+한국": "data_for_google_EN_KR",
-    "중국": "data_for_google_HK_TW"
-}
+
+# 선택한 데이터 소스에 따라 베이스 디렉토리 경로가 바뀝니다.
+if data_source == "Google News":
+    region_map = {
+        "미국+한국": "data_for_google_EN_KR",
+        "중국": "data_for_google_HK_TW"
+    }
+else:
+    # 🚨 실제 News API 결과물이 저장된 폴더명으로 알맞게 수정해 주세요!
+    region_map = {
+        "미국+한국": "data_for_newsapi_EN_KR",
+        "중국": "data_for_newsapi_HK_TW"
+    }
 
 selected_regions = []
 
-# 💡 체크박스로 UI 변경 (기본적으로 '미국+한국'은 체크된 상태로 설정)
+# 체크박스로 UI 변경 (기본적으로 '미국+한국'은 체크된 상태로 설정)
 if st.sidebar.checkbox("🇺🇸 미국 + 🇰🇷 한국", value=True):
     selected_regions.append("미국+한국")
     
@@ -67,23 +66,11 @@ if not selected_regions:
     st.warning("⚠️ 최소 1개 이상의 지역을 선택해야 합니다.")
     st.stop()
 
-
-# 선택된 지역들의 데이터(result) 및 임베딩 경로 리스트 생성
+# 💡 [핵심] 선택된 지역과 소스에 맞춰 result, embeddings 폴더 경로를 생성합니다.
 result_dirs = [os.path.join(region_map[r], "result") for r in selected_regions]
 emb_dirs = [os.path.join(region_map[r], "embeddings") for r in selected_regions]
 
 st.sidebar.markdown("---")
-
-# 데이터 소스 선택
-st.sidebar.markdown("### 🗄️ 데이터 소스 설정")
-data_source = st.sidebar.radio(
-    "뉴스 수집 출처를 선택하세요",
-    options=["Google News", "News API"],
-    index=0
-)
-
-st.sidebar.markdown("---")
-
 @st.cache_data
 def get_available_periods(data_dirs_list, source):
     """여러 지역 폴더를 순회하며 공통/개별 주차 파일들을 묶어주는 함수"""

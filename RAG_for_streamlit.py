@@ -26,19 +26,36 @@ import re
 warnings.filterwarnings("ignore")
 
 # ==========================================
-# 1. 사이드바: 분석 대상 국가/지역 (체크박스 적용)
+# 1. 사이드바: 데이터 소스 설정 (💡 이걸 가장 먼저 물어봐야 합니다!)
+# ==========================================
+st.sidebar.markdown("### 🗄️ 데이터 소스 설정")
+data_source = st.sidebar.radio(
+    "뉴스 수집 출처를 선택하세요",
+    options=["Google News", "News API"],
+    index=0
+)
+st.sidebar.markdown("---")
+
+# ==========================================
+# 2. 사이드바: 분석 대상 국가/지역 및 동적 경로 할당
 # ==========================================
 st.sidebar.markdown("### 🌎 분석 대상 국가/지역")
 
-# 지역별 베이스 디렉토리 매핑
-region_map = {
-    "미국+한국": "data_for_google_EN_KR",
-    "중국": "data_for_google_HK_TW"
-}
+# 💡 데이터 소스 선택 결과에 따라 폴더 경로를 다르게 매핑합니다.
+if data_source == "Google News":
+    region_map = {
+        "미국+한국": "data_for_google_EN_KR",
+        "중국": "data_for_google_HK_TW"
+    }
+else:
+    region_map = {
+        "미국+한국": "data_for_NewsAPI_EN_KR", 
+        "중국": "data_for_NewsAPI_HK_TW"
+    }
 
 selected_regions = []
 
-# 💡 체크박스로 UI 변경 (기본적으로 '미국+한국'은 체크된 상태로 설정)
+# 체크박스로 UI 변경 (기본적으로 '미국+한국'은 체크된 상태로 설정)
 if st.sidebar.checkbox("🇺🇸 미국 + 🇰🇷 한국", value=True):
     selected_regions.append("미국+한국")
     
@@ -49,20 +66,11 @@ if not selected_regions:
     st.warning("⚠️ 최소 1개 이상의 지역을 선택해야 합니다.")
     st.stop()
 
-# 선택된 지역들의 CSV 데이터 폴더 경로 리스트 생성 (예: data_for_google_EN_KR/data)
+# 💡 선택된 지역들의 최종 CSV 데이터 폴더 경로 리스트 생성
+# 예: Google News 선택 시 -> ['data_for_google_EN_KR/articles']
+# 예: News API 선택 시 -> ['data_for_newsapi_EN_KR/articles']
 data_dirs = [os.path.join(region_map[r], "articles") for r in selected_regions]
 
-st.sidebar.markdown("---")
-
-# ==========================================
-# 2. 사이드바: 데이터 소스 설정
-# ==========================================
-st.sidebar.markdown("### 🗄️ 데이터 소스 설정")
-data_source = st.sidebar.radio(
-    "뉴스 수집 출처를 선택하세요",
-    options=["Google News", "News API"],
-    index=0
-)
 st.sidebar.markdown("---")
 
 # ==========================================
