@@ -17,3 +17,7 @@ rank-bm25
 # 통신 및 환경변수(보안)
 httpx
 python-dotenv
+
+# 토크나이저
+re
+jieba
