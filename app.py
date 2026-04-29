@@ -48,22 +48,24 @@ def set_search_keyword(keyword):
 
 # 💡 [수정] 사이드바 최상단: 분석 대상 국가/지역 복수 선택 (Multiselect)
 st.sidebar.markdown("### 🌎 분석 대상 국가/지역")
-selected_regions = st.sidebar.multiselect(
-    "분석할 지역을 모두 선택하세요",
-    options=["미국+한국", "중국"],
-    default=["미국+한국"], # 기본적으로 하나는 선택되어 있도록 설정
-    placeholder="지역을 선택해주세요"
-)
-
-if not selected_regions:
-    st.warning("⚠️ 최소 1개 이상의 지역을 선택해야 합니다.")
-    st.stop()
-
-# 💡 선택된 지역들에 대한 경로 매핑
+# 지역별 베이스 디렉토리 매핑
 region_map = {
     "미국+한국": "data_for_google_EN_KR",
     "중국": "data_for_google_HK_TW"
 }
+
+selected_regions = []
+
+# 💡 체크박스로 UI 변경 (기본적으로 '미국+한국'은 체크된 상태로 설정)
+if st.sidebar.checkbox("🇺🇸 미국 + 🇰🇷 한국", value=True):
+    selected_regions.append("미국+한국")
+    
+if st.sidebar.checkbox("🇨🇳 중국 (홍콩/대만 포함)", value=False):
+    selected_regions.append("중국")
+
+if not selected_regions:
+    st.warning("⚠️ 최소 1개 이상의 지역을 선택해야 합니다.")
+    st.stop()
 
 # 선택된 지역들의 데이터(result) 및 임베딩 경로 리스트 생성
 result_dirs = [os.path.join(region_map[r], "result") for r in selected_regions]
