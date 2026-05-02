@@ -126,17 +126,36 @@ def load_and_concat_data(selected_files_dict):
 
 @st.cache_data
 def load_embedding_dict(emb_dirs_list, source):
-    """여러 지역의 임베딩 사전을 읽어와 하나로 통합하는 함수"""
-    dict_filename = 'keyword_embeddings_dict_NewsAPI.pkl' if source == "News API" else 'keyword_embeddings_dict.pkl'
+    """여러 지역의 임베딩 사전을 읽어와 하나로 통합하는 함수 (.pkl 및 .parquet 완벽 호환)"""
+    
+    # 💡 1. 확장자를 뺀 '기본 파일명'만 먼저 세팅합니다.
+    base_filename = 'keyword_embeddings_dict_NewsAPI' if source == "News API" else 'keyword_embeddings_dict'
     combined_dict = {}
     
     for emb_dir in emb_dirs_list:
-        dict_path = os.path.join(emb_dir, dict_filename)
-        if os.path.exists(dict_path):
-            with open(dict_path, 'rb') as f:
-                temp_dict = pickle.load(f)
-                combined_dict.update(temp_dict) # 💡 파이썬 update()로 딕셔너리 안전하게 병합
+        # 두 가지 포맷의 전체 경로를 각각 만듭니다.
+        parquet_path = os.path.join(emb_dir, f"{base_filename}.parquet")
+        pkl_path = os.path.join(emb_dir, f"{base_filename}.pkl")
+        
+        # 💡 2. Parquet 파일이 존재하는지 먼저 확인 (최신 데이터 우선)
+        if os.path.exists(parquet_path):
+            try:
+                # DataFrame으로 읽어온 뒤 Dictionary로 복원
+                df_dict = pd.read_parquet(parquet_path, engine='pyarrow')
+                temp_dict = dict(zip(df_dict['Keyword'], df_dict['Embedding']))
+                combined_dict.update(temp_dict)
+            except Exception as e:
+                st.warning(f"⚠️ Parquet 사전 파일 로드 중 에러 발생: {e}")
                 
+        # 💡 3. Parquet가 없고 PKL 파일만 있다면 (과거 데이터 호환)
+        elif os.path.exists(pkl_path):
+            try:
+                with open(pkl_path, 'rb') as f:
+                    temp_dict = pickle.load(f)
+                    combined_dict.update(temp_dict)
+            except Exception as e:
+                st.warning(f"⚠️ PKL 사전 파일 로드 중 에러 발생: {e}")
+
     return combined_dict
 
 # 1) 파일 목록 가져오기 (여러 지역 경로 전달)
