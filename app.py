@@ -49,8 +49,8 @@ if data_source == "Google News":
 else:
     # 🚨 실제 News API 결과물이 저장된 폴더명으로 알맞게 수정해 주세요!
     region_map = {
-        "미국+한국": "data_for_newsapi_EN_KR",
-        "중국": "data_for_newsapi_HK_TW"
+        "미국+한국": "data_for_NewsAPI_EN_KR",
+        "중국": "data_for_NewsAPI_HK_TW"
     }
 
 selected_regions = []
